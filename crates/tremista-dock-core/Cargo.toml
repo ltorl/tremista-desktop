@@ -1,0 +1,23 @@
+[package]
+name = "tremista-dock-core"
+description = "Layout, theming and rendering for the Tremista dock. No Wayland dependency, so it builds and renders previews on any platform."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# tiny-skia is pinned to the same 0.12 resvg links against, so the Pixmap we
+# rasterize SVG icons into is the same type we composite the dock in.
+tiny-skia = "0.12.0"
+# `text` pulls in fontdb + a full text shaper; app icons don't need it.
+resvg = { version = "0.48.1", default-features = false }
+image = { version = "0.25.10", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
+
+freedesktop-desktop-entry = "0.8.1"
+freedesktop-icons = "0.4.0"
+
+anyhow = "1.0.104"
+log = "0.4.33"

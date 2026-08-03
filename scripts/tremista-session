@@ -1,0 +1,26 @@
+#!/bin/sh
+# Session entry point. The display manager runs this, not wayfire directly, so
+# the environment is set up before the compositor reads its config.
+set -eu
+
+# Wayfire reads ~/.config/wayfire.ini by default. Pointing it at our own file
+# instead means installing Tremista never overwrites a config the user already
+# had, and both can coexist as separate sessions.
+export WAYFIRE_CONFIG_FILE="${WAYFIRE_CONFIG_FILE:-$HOME/.config/tremista/wayfire.ini}"
+
+export XDG_CURRENT_DESKTOP=Tremista:wlroots
+export XDG_SESSION_TYPE=wayland
+
+# Toolkits default to X11 under XWayland otherwise, which loses client-side
+# decorations, fractional scaling and smooth resize.
+export QT_QPA_PLATFORM=wayland
+export GDK_BACKEND=wayland,x11
+export MOZ_ENABLE_WAYLAND=1
+export SDL_VIDEODRIVER=wayland
+export _JAVA_AWT_WM_NONREPARENTING=1
+
+# Qt draws its own title bars by default, which would not match the macOS
+# traffic lights the compositor puts on GTK windows.
+export QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+
+exec wayfire "$@"

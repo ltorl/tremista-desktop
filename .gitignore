@@ -1,0 +1,8 @@
+# Rust build output
+/target/
+
+# macOS -- the look is iterated on from a Mac, so these turn up constantly
+.DS_Store
+
+# Preview frames from `cargo run -p tremista-dock-core --example preview`
+/preview/

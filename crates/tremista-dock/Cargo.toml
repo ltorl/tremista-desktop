@@ -1,0 +1,28 @@
+[package]
+name = "tremista-dock"
+description = "macOS-style dock for the Tremista desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Everything platform-independent -- layout, rendering, icons, .desktop parsing
+# -- lives in the core so it can be built and tested off Linux. This crate is
+# only the Wayland transport around it.
+tremista-dock-core = { path = "../tremista-dock-core", version = "0.1.0" }
+
+# Wayland. Default features are off deliberately:
+#   * `xkbcommon` drags in pkg-config and a C dependency, and the dock takes no
+#     keyboard input.
+#   * `calloop` is unnecessary because frame callbacks drive every animation,
+#     so a plain blocking dispatch loop is enough and has fewer moving parts.
+smithay-client-toolkit = { version = "0.21.1", default-features = false }
+wayland-client = "0.31.15"
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+
+# Must stay in lockstep with the core's tiny-skia so `Pixmap` is one type.
+tiny-skia = "0.12.0"
+
+anyhow = "1.0.104"
+log = "0.4.33"
+env_logger = "0.11.11"

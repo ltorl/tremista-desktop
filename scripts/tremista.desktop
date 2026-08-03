@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Tremista
+Comment=A fast, macOS-like Wayland desktop
+Exec=tremista-session
+TryExec=tremista-session
+Type=Application
+DesktopNames=Tremista
+Keywords=wayland;wayfire;desktop;
