@@ -12,9 +12,8 @@ mod toplevels;
 
 use anyhow::{anyhow, Context, Result};
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState, Region},
-    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm,
+    compositor::{CompositorHandler, CompositorState, FrameCallbackData, Region},
+    delegate_dispatch2, delegate_registry,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
@@ -173,7 +172,7 @@ fn main() -> Result<()> {
 
     // Optional: without it the dock still launches apps, it just cannot show
     // which of them are running or focus their windows.
-    match globals.bind::<ZwlrForeignToplevelManagerV1, _, _>(&qh, 1..=3, ()) {
+    match globals.bind::<ZwlrForeignToplevelManagerV1, _, _>(&qh, 1..=3, toplevels::ToplevelData) {
         Ok(manager) => dock._toplevel_manager = Some(manager),
         Err(e) => log::warn!(
             "wlr-foreign-toplevel-management unavailable ({e}); \
@@ -349,7 +348,7 @@ impl Dock {
         surface.damage_buffer(0, 0, width_px, height_px);
         // Ask for the next frame *before* committing, so the compositor knows
         // we intend to keep animating.
-        surface.frame(qh, surface.clone());
+        surface.frame(qh, FrameCallbackData(surface.clone()));
         buffer.attach_to(surface).context("attaching the buffer")?;
         self.layer.commit();
 
@@ -632,10 +631,9 @@ impl ProvidesRegistryState for Dock {
     registry_handlers![OutputState, SeatState];
 }
 
-delegate_compositor!(Dock);
-delegate_output!(Dock);
-delegate_shm!(Dock);
-delegate_seat!(Dock);
-delegate_pointer!(Dock);
-delegate_layer!(Dock);
 delegate_registry!(Dock);
+// One blanket impl covers every sctk-owned object: since 0.21 the per-protocol
+// `delegate_*!` macros are gone, and each `*Data` type carries its own dispatch.
+// Our foreign-toplevel objects stay out of its way by using a marker type of
+// their own (`toplevels::ToplevelData`) rather than `()`.
+delegate_dispatch2!(Dock);

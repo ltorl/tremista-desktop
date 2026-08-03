@@ -52,29 +52,6 @@ out and pick **Tremista**, or try it from a running session with:
 
     WAYFIRE_CONFIG_FILE=~/.config/tremista/wayfire.ini wayfire
 
-## Testing without logging out
-
-Wayfire is a wlroots compositor, so it can nest inside the session you are
-already in. From a terminal on the machine itself:
-
-    ./scripts/test-nested.sh --repo
-
-That opens the whole desktop in a window. Nothing about the running session is
-touched, and closing the window ends the test.
-
-Over SSH there is no display to nest into, so that script refuses to start.
-Either export the physical session's socket first:
-
-    export XDG_RUNTIME_DIR=/run/user/$(id -u) WAYLAND_DISPLAY=wayland-0
-
-— the window then appears on the machine's own monitor, not in your terminal —
-or render to memory and screenshot the result:
-
-    ./scripts/test-headless.sh
-
-Headless proves the compositor starts, the dock connects and the icons resolve.
-It cannot show anything driven by a pointer, because there is no seat.
-
 ## Configuring the dock
 
 `~/.config/tremista/dock.conf` is one `.desktop` id per line, top to bottom =

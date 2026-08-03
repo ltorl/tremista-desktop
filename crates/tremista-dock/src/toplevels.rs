@@ -113,12 +113,20 @@ impl Dock {
     }
 }
 
-impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for Dock {
+/// User data for the foreign-toplevel objects.
+///
+/// A marker type rather than `()`: sctk's blanket `delegate_dispatch2!` impl
+/// covers `Dispatch<I, U>` for every `U` that implements its `Dispatch2`, and a
+/// hand-written impl on a std type like `()` would overlap it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ToplevelData;
+
+impl Dispatch<ZwlrForeignToplevelManagerV1, ToplevelData> for Dock {
     fn event(
         state: &mut Self,
         _manager: &ZwlrForeignToplevelManagerV1,
         event: zwlr_foreign_toplevel_manager_v1::Event,
-        _: &(),
+        _: &ToplevelData,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
@@ -137,16 +145,16 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for Dock {
     }
 
     wayland_client::event_created_child!(Dock, ZwlrForeignToplevelManagerV1, [
-        zwlr_foreign_toplevel_manager_v1::EVT_TOPLEVEL_OPCODE => (ZwlrForeignToplevelHandleV1, ()),
+        zwlr_foreign_toplevel_manager_v1::EVT_TOPLEVEL_OPCODE => (ZwlrForeignToplevelHandleV1, ToplevelData),
     ]);
 }
 
-impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Dock {
+impl Dispatch<ZwlrForeignToplevelHandleV1, ToplevelData> for Dock {
     fn event(
         state: &mut Self,
         handle: &ZwlrForeignToplevelHandleV1,
         event: zwlr_foreign_toplevel_handle_v1::Event,
-        _: &(),
+        _: &ToplevelData,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
