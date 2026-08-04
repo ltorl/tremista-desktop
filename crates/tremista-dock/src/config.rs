@@ -9,7 +9,9 @@ use std::path::PathBuf;
 /// Apps pinned when the user has no config file yet. Anything not installed is
 /// silently dropped when the ids are resolved, so a generous list is safe.
 const DEFAULTS: &[&str] = &[
-    "firefox",
+    // Chromium is packaged under four different ids depending on whether it
+    // came from Debian, an Ubuntu snap, or Flathub.
+    "chromium|chromium-browser|chromium_chromium|org.chromium.Chromium",
     "org.gnome.Nautilus",
     // GNOME's terminal has been three different apps across releases; `|` picks
     // whichever one this machine actually has.

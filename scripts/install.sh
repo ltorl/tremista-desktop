@@ -35,15 +35,15 @@ done
 # EndeavourOS, Nobara) then work without being listed.
 if command -v pacman >/dev/null 2>&1; then
     pm="pacman"
-    deps="wayfire wf-config swaybg gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr ttf-inter papirus-icon-theme"
+    deps="wayfire wf-config swaybg chromium gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr ttf-inter papirus-icon-theme"
     install_cmd="sudo pacman -S --needed $deps"
 elif command -v apt-get >/dev/null 2>&1; then
     pm="apt"
-    deps="wayfire swaybg gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr fonts-inter papirus-icon-theme"
+    deps="wayfire swaybg chromium gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr fonts-inter papirus-icon-theme"
     install_cmd="sudo apt-get install -y $deps"
 elif command -v dnf >/dev/null 2>&1; then
     pm="dnf"
-    deps="wayfire swaybg gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr rsms-inter-fonts papirus-icon-theme"
+    deps="wayfire swaybg chromium gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr rsms-inter-fonts papirus-icon-theme"
     install_cmd="sudo dnf install -y $deps"
 else
     pm=""
@@ -96,7 +96,8 @@ if [ ! -f "$config_dir/dock.conf" ]; then
 # One .desktop id per line, top to bottom = left to right in the dock.
 # Ids that are not installed are skipped silently. "a|b" pins the first of
 # a and b that is installed.
-firefox
+# Chromium's id differs between Debian, the Ubuntu snap and Flathub.
+chromium|chromium-browser|chromium_chromium|org.chromium.Chromium
 org.gnome.Nautilus
 # The GNOME terminal has been renamed twice; the first id installed wins.
 org.gnome.Terminal|org.gnome.Ptyxis|org.gnome.Console
