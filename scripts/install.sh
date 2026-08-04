@@ -100,8 +100,8 @@ firefox
 org.gnome.Nautilus
 # The GNOME terminal has been renamed twice; the first id installed wins.
 org.gnome.Terminal|org.gnome.Ptyxis|org.gnome.Console
-org.gnome.TextEditor
 org.gnome.Settings
+# "All Apps" is added automatically at the right end; it is not listed here.
 EOF
 fi
 

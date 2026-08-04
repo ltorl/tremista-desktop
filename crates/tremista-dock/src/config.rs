@@ -15,8 +15,16 @@ const DEFAULTS: &[&str] = &[
     // whichever one this machine actually has.
     "org.gnome.Terminal|org.gnome.Ptyxis|org.gnome.Console",
     "code",
-    "org.gnome.TextEditor",
     "org.gnome.Settings",
+];
+
+/// What the "All Apps" icon opens. Tried in order so the dock works with
+/// whichever launcher is installed; `$TREMISTA_LAUNCHER` replaces the lot.
+const LAUNCHERS: &[(&str, &str)] = &[
+    ("wofi", "wofi --show drun"),
+    ("fuzzel", "fuzzel"),
+    ("rofi", "rofi -show drun"),
+    ("bemenu-run", "bemenu-run"),
 ];
 
 pub fn config_dir() -> Option<PathBuf> {
@@ -29,6 +37,38 @@ pub fn config_dir() -> Option<PathBuf> {
 
 pub fn pinned_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("dock.conf"))
+}
+
+/// The command the "All Apps" icon runs.
+///
+/// Resolved at startup rather than baked in, because none of these launchers is
+/// present everywhere. A chain in `sh` would work too, but resolving here means
+/// the log says which one was picked when the icon does nothing.
+pub fn launcher_command() -> String {
+    if let Some(custom) = std::env::var_os("TREMISTA_LAUNCHER") {
+        let custom = custom.to_string_lossy().into_owned();
+        if !custom.trim().is_empty() {
+            return custom;
+        }
+    }
+    for (binary, command) in LAUNCHERS {
+        if which(binary) {
+            return (*command).to_owned();
+        }
+    }
+    log::warn!(
+        "no app launcher found (tried {}); the All Apps icon will do nothing",
+        LAUNCHERS.iter().map(|(b, _)| *b).collect::<Vec<_>>().join(", ")
+    );
+    String::new()
+}
+
+/// Is `binary` on PATH? A hand-rolled `which`, to avoid a crate for six lines.
+fn which(binary: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| dir.join(binary).is_file())
 }
 
 /// Directories searched for icon overrides, ahead of the system icon theme.

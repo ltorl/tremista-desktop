@@ -72,8 +72,11 @@ pub struct Dock {
     /// Apps the user pinned, in order. These stay put whether running or not.
     pinned: Vec<DockItem>,
     /// What is actually shown: the pinned apps, then any running app that is
-    /// not pinned -- the way macOS appends unpinned running apps on the right.
+    /// not pinned -- the way macOS appends unpinned running apps on the right
+    /// -- and finally the "All Apps" icon, which is always the rightmost.
     visible: Vec<DockItem>,
+    /// The "All Apps" entry, rebuilt into `visible` on every change.
+    launchpad: DockItem,
     pub toplevels: Vec<Toplevel>,
 
     cursor_x: Option<f32>,
@@ -155,6 +158,7 @@ fn main() -> Result<()> {
         icons: IconCache::new(icon_resolution, None).with_overrides(config::icon_dirs()),
         pinned: pinned.clone(),
         visible: pinned,
+        launchpad: tremista_dock_core::model::launchpad(config::launcher_command()),
         toplevels: Vec::new(),
         cursor_x: None,
         pressed: None,
@@ -179,6 +183,11 @@ fn main() -> Result<()> {
              running indicators and click-to-focus are disabled"
         ),
     }
+
+    // Appends "All Apps" to the pinned list. Done here rather than in the
+    // initialiser so it also happens when there is no toplevel manager to
+    // trigger the first rebuild.
+    dock.rebuild_items();
 
     while !dock.exit {
         event_queue.blocking_dispatch(&mut dock)?;
@@ -224,6 +233,10 @@ impl Dock {
                 pinned: false,
             });
         }
+
+        // Always last, so it stays at the right end however many windows are
+        // open -- the one entry whose position never moves.
+        visible.push(self.launchpad.clone());
 
         if visible != self.visible {
             self.visible = visible;

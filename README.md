@@ -55,7 +55,14 @@ out and pick **Tremista**, or try it from a running session with:
 ## Configuring the dock
 
 `~/.config/tremista/dock.conf` is one `.desktop` id per line, top to bottom =
-left to right. Ids that are not installed are skipped.
+left to right. Ids that are not installed are skipped, and a line may list
+alternatives as `a|b|c` — the first installed one is pinned, which is how the
+default list pins whichever GNOME terminal your release ships.
+
+**All Apps** is always the rightmost icon and is not configurable away. It runs
+the first launcher it finds — wofi, fuzzel, rofi, bemenu — or `$TREMISTA_LAUNCHER`
+if you set one. Its icon is built into the binary; drop a
+`tremista-launchpad.svg` in the icons directory below to replace it.
 
 Icons come from the system icon theme, but `~/.config/tremista/icons` is
 searched first: a file named after the app's `Icon=` name — `firefox.svg`,

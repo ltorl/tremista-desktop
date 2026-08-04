@@ -14,6 +14,26 @@ pub struct DockItem {
     pub pinned: bool,
 }
 
+/// App id of the built-in "All Apps" entry.
+///
+/// Deliberately not a reverse-DNS name: it must never collide with a real
+/// window's `app_id`, or opening that app would light up a running indicator on
+/// a dock entry that is not an app at all.
+pub const LAUNCHPAD_APP_ID: &str = "tremista-launchpad";
+
+/// The "All Apps" entry that sits at the right end of the dock. Its icon is
+/// compiled into the binary, so it appears with no icon theme installed.
+pub fn launchpad(exec: String) -> DockItem {
+    DockItem {
+        app_id: LAUNCHPAD_APP_ID.to_owned(),
+        name: "All Apps".to_owned(),
+        exec,
+        icon_name: LAUNCHPAD_APP_ID.to_owned(),
+        running: false,
+        pinned: true,
+    }
+}
+
 /// Strip `.desktop` `Exec=` field codes (`%f`, `%U`, ...).
 ///
 /// These expand to files or URLs passed to the app; launching from a dock icon

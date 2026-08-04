@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Built into the dock binary, so "All Apps" has an icon on a machine with
+       no icon theme installed. A silver squircle carrying a 3x3 grid of app
+       tiles, which is what Launchpad has looked like since macOS Tahoe. -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbfbfd"/>
+      <stop offset="1" stop-color="#d8d9de"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="27" fill="url(#plate)"/>
+  <rect x="4" y="4" width="120" height="120" rx="27" fill="url(#sheen)"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="26.5"
+        fill="none" stroke="#00000018" stroke-width="1"/>
+
+  <!-- Row 1 -->
+  <rect x="24" y="24" width="24" height="24" rx="7" fill="#ff6b5e"/>
+  <rect x="52" y="24" width="24" height="24" rx="7" fill="#ffb340"/>
+  <rect x="80" y="24" width="24" height="24" rx="7" fill="#ffd426"/>
+  <!-- Row 2 -->
+  <rect x="24" y="52" width="24" height="24" rx="7" fill="#41c464"/>
+  <rect x="52" y="52" width="24" height="24" rx="7" fill="#3aa8f5"/>
+  <rect x="80" y="52" width="24" height="24" rx="7" fill="#2f6fe0"/>
+  <!-- Row 3 -->
+  <rect x="24" y="80" width="24" height="24" rx="7" fill="#a06bf0"/>
+  <rect x="52" y="80" width="24" height="24" rx="7" fill="#f06bb4"/>
+  <rect x="80" y="80" width="24" height="24" rx="7" fill="#8e9099"/>
+</svg>

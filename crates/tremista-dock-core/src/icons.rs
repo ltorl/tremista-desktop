@@ -20,6 +20,14 @@ pub struct IconCache {
 /// magnification, so it wins over a bitmap of the same name.
 const OVERRIDE_EXTENSIONS: &[&str] = &["svg", "png", "webp", "jpg", "jpeg"];
 
+/// Icons compiled into the binary, for dock entries that are ours rather than
+/// an installed app's and so have nothing in any icon theme. Consulted last, so
+/// an override directory or a theme icon of the same name still wins.
+const BUILTIN_ICONS: &[(&str, &[u8])] = &[(
+    "tremista-launchpad",
+    include_bytes!("../assets/launchpad.svg"),
+)];
+
 impl IconCache {
     pub fn new(resolution: u32, theme: Option<String>) -> Self {
         Self {
@@ -74,7 +82,12 @@ impl IconCache {
     fn load(&self, name: &str) -> Result<Option<Pixmap>> {
         let path = match self.resolve(name) {
             Some(p) => p,
-            None => return Ok(None),
+            None => {
+                return match BUILTIN_ICONS.iter().find(|(n, _)| *n == name) {
+                    Some((_, data)) => rasterize_svg(data, self.resolution).map(Some),
+                    None => Ok(None),
+                }
+            }
         };
         rasterize(&path, self.resolution).map(Some)
     }
@@ -261,6 +274,36 @@ mod tests {
 
         // A name that could climb out of the directory must not be joined onto it.
         assert!(cache.get("../firefox").is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_launchpad_icon_is_available_without_a_theme() {
+        let mut cache = IconCache::new(64, None);
+        let pixmap = cache
+            .get(crate::model::LAUNCHPAD_APP_ID)
+            .expect("built-in icon should always resolve");
+        assert_eq!(pixmap.width(), 64);
+        // Opaque in the middle: an SVG that failed to parse would render empty.
+        assert_eq!(pixmap.pixel(32, 32).unwrap().alpha(), 255);
+    }
+
+    #[test]
+    fn an_override_beats_a_builtin() {
+        let dir = std::env::temp_dir().join(format!("tremista-builtin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+            <rect width="16" height="16" fill="#ff0000"/></svg>"##;
+        std::fs::write(dir.join(format!("{}.svg", crate::model::LAUNCHPAD_APP_ID)), svg).unwrap();
+
+        let mut cache = IconCache::new(32, None).with_overrides([dir.clone()]);
+        let centre = cache
+            .get(crate::model::LAUNCHPAD_APP_ID)
+            .unwrap()
+            .pixel(16, 16)
+            .unwrap();
+        assert!(centre.red() > 200 && centre.green() < 50);
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
