@@ -10,16 +10,31 @@ pub struct IconCache {
     /// Edge length icons are rasterised at.
     resolution: u32,
     theme: Option<String>,
+    /// Searched before the icon theme, so a user can replace one app's icon
+    /// without installing or forking a whole theme.
+    overrides: Vec<PathBuf>,
     by_name: HashMap<String, Option<Pixmap>>,
 }
+
+/// Extensions an override is looked up under, best first: SVG scales to any
+/// magnification, so it wins over a bitmap of the same name.
+const OVERRIDE_EXTENSIONS: &[&str] = &["svg", "png", "webp", "jpg", "jpeg"];
 
 impl IconCache {
     pub fn new(resolution: u32, theme: Option<String>) -> Self {
         Self {
             resolution,
             theme,
+            overrides: Vec::new(),
             by_name: HashMap::new(),
         }
+    }
+
+    /// Add directories searched ahead of the icon theme. A file named
+    /// `<icon name>.<ext>` in one of them replaces that icon.
+    pub fn with_overrides(mut self, dirs: impl IntoIterator<Item = PathBuf>) -> Self {
+        self.overrides.extend(dirs);
+        self
     }
 
     /// Look up an icon by its freedesktop name (or absolute path, which
@@ -69,6 +84,19 @@ impl IconCache {
         let as_path = Path::new(name);
         if as_path.is_absolute() && as_path.exists() {
             return Some(as_path.to_owned());
+        }
+
+        // A name with a separator in it would escape the override directory,
+        // so only bare icon names are eligible.
+        if !name.contains('/') && !name.contains('\\') && name != ".." {
+            for dir in &self.overrides {
+                for ext in OVERRIDE_EXTENSIONS {
+                    let candidate = dir.join(format!("{name}.{ext}"));
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
         }
 
         let mut lookup = freedesktop_icons::lookup(name)
@@ -214,6 +242,27 @@ mod tests {
         assert!(!cache.by_name.is_empty());
         cache.set_resolution(128);
         assert!(cache.by_name.is_empty());
+    }
+
+    #[test]
+    fn an_override_directory_beats_the_icon_theme() {
+        let dir = std::env::temp_dir().join(format!("tremista-icons-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+            <rect width="16" height="16" fill="#ff0000"/></svg>"##;
+        std::fs::write(dir.join("firefox.svg"), svg).unwrap();
+
+        let mut cache = IconCache::new(32, None).with_overrides([dir.clone()]);
+        // firefox may or may not be installed here; either way the override
+        // must be what comes back, so check the pixels rather than mere Some.
+        let pixmap = cache.get("firefox").expect("override should resolve");
+        let centre = pixmap.pixel(16, 16).unwrap();
+        assert!(centre.red() > 200 && centre.green() < 50);
+
+        // A name that could climb out of the directory must not be joined onto it.
+        assert!(cache.get("../firefox").is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

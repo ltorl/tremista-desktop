@@ -57,6 +57,11 @@ out and pick **Tremista**, or try it from a running session with:
 `~/.config/tremista/dock.conf` is one `.desktop` id per line, top to bottom =
 left to right. Ids that are not installed are skipped.
 
+Icons come from the system icon theme, but `~/.config/tremista/icons` is
+searched first: a file named after the app's `Icon=` name — `foot.svg`,
+`org.gnome.Nautilus.png` — replaces the theme's version of that icon. SVG wins
+over a bitmap of the same name. `assets/icons/` is installed there.
+
 The wallpaper is `~/.config/tremista/wallpaper.<ext>` — any format swaybg can
 read. `assets/wallpaper.png` is installed there the first time, and never
 overwritten afterwards.

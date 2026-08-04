@@ -111,6 +111,13 @@ if ! ls "$config_dir"/wallpaper.* >/dev/null 2>&1; then
     echo "    with any image to change it)"
 fi
 
+# Bundled app icons. Unlike the wallpaper these are installed every time: the
+# directory is ours, and a user who wants a different icon adds their own file
+# under a different name rather than editing one of these.
+for icon in "$repo"/assets/icons/*; do
+    [ -f "$icon" ] && install -Dm644 "$icon" "$config_dir/icons/$(basename "$icon")"
+done
+
 case ":$PATH:" in
     *":$prefix/bin:"*) ;;
     *) echo "    note: $prefix/bin is not on your PATH" ;;

@@ -55,6 +55,8 @@ export RUST_LOG="${RUST_LOG:-tremista_dock=debug,info}"
 # Show the repo's wallpaper without installing anything, so a --repo run looks
 # like the real thing. An installed wallpaper still wins if you set this empty.
 export TREMISTA_WALLPAPER="${TREMISTA_WALLPAPER:-$repo/assets/wallpaper.png}"
+# Likewise for the bundled app icons, which otherwise only exist once installed.
+export TREMISTA_ICONS="${TREMISTA_ICONS:-$repo/assets/icons}"
 
 echo "==> starting nested Wayfire (close the window to stop)"
 exec wayfire

@@ -29,6 +29,20 @@ pub fn pinned_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("dock.conf"))
 }
 
+/// Directories searched for icon overrides, ahead of the system icon theme.
+///
+/// `$TREMISTA_ICONS` comes first so scripts/test-nested.sh can show the repo's
+/// own icons without installing them; `~/.config/tremista/icons` is the one
+/// users are told about.
+pub fn icon_dirs() -> Vec<PathBuf> {
+    std::env::var_os("TREMISTA_ICONS")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .into_iter()
+        .chain(config_dir().map(|d| d.join("icons")))
+        .collect()
+}
+
 /// Read the pinned app ids, falling back to [`DEFAULTS`] when there is no
 /// config file. A file that exists but lists nothing yields an empty dock --
 /// that is a deliberate choice by the user, not a reason to re-add defaults.

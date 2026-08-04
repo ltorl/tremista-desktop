@@ -152,7 +152,7 @@ fn main() -> Result<()> {
         width: 0,
         height,
         scale: 1,
-        icons: IconCache::new(icon_resolution, None),
+        icons: IconCache::new(icon_resolution, None).with_overrides(config::icon_dirs()),
         pinned: pinned.clone(),
         visible: pinned,
         toplevels: Vec::new(),
