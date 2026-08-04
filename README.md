@@ -59,9 +59,17 @@ left to right. Ids that are not installed are skipped, and a line may list
 alternatives as `a|b|c` — the first installed one is pinned, which is how the
 default list pins whichever GNOME terminal your release ships.
 
-**All Apps** is always the rightmost icon and is not configurable away. It runs
-the first launcher it finds — wofi, fuzzel, rofi, bemenu — or `$TREMISTA_LAUNCHER`
-if you set one. Its icon is built into the binary; drop a
+**All Apps** is always the rightmost icon and is not configurable away. Clicking
+it opens **Launchpad**: a full-screen, paged grid of every installed app, drawn
+by the dock itself. It is not a separate program and never has a window, so it
+cannot appear in the dock or in a window switcher. Click an app to launch it,
+click the background or press `Escape` to dismiss, and scroll or press the arrow
+keys to change page. The dock stays visible and clickable along the bottom, so
+clicking All Apps again also closes it.
+
+Labels use the first suitable font it finds; set `$TREMISTA_FONT` to a `.ttf`,
+`.otf` or `.ttc` file to pick one. With no font at all the grid still works, it
+just has no captions. The All Apps icon is built into the binary; drop a
 `tremista-launchpad.svg` in the icons directory below to replace it.
 
 Icons come from the system icon theme, but `~/.config/tremista/icons` is

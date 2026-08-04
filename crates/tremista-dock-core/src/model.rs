@@ -23,15 +23,46 @@ pub const LAUNCHPAD_APP_ID: &str = "tremista-launchpad";
 
 /// The "All Apps" entry that sits at the right end of the dock. Its icon is
 /// compiled into the binary, so it appears with no icon theme installed.
-pub fn launchpad(exec: String) -> DockItem {
+///
+/// It has no `exec`: clicking it opens the dock's own Launchpad overlay rather
+/// than starting anything, so it is not an app and never gets a window.
+pub fn launchpad() -> DockItem {
     DockItem {
         app_id: LAUNCHPAD_APP_ID.to_owned(),
         name: "All Apps".to_owned(),
-        exec,
+        exec: String::new(),
         icon_name: LAUNCHPAD_APP_ID.to_owned(),
         running: false,
         pinned: true,
     }
+}
+
+/// Every launchable installed app, sorted by name -- what Launchpad shows.
+///
+/// Entries needing a terminal emulator are left out: the dock spawns them with
+/// no terminal attached, so showing them would offer icons that do nothing.
+pub fn all_apps() -> Vec<DockItem> {
+    let locales = get_languages_from_env();
+    let entries = freedesktop_desktop_entry::desktop_entries(&locales);
+
+    let mut apps: Vec<DockItem> = entries
+        .iter()
+        .filter(|entry| !entry.terminal())
+        .filter_map(|entry| from_entry(entry, &locales, false))
+        .collect();
+
+    // The same app can be installed from more than one place -- a distro
+    // package and a Flatpak both shipping org.gnome.Calculator -- and two
+    // identical icons side by side looks like a bug.
+    apps.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
+    apps.dedup_by(|a, b| a.app_id == b.app_id && a.name == b.name);
+    apps
+}
+
+/// Case-insensitive name, with the app id breaking ties so the order is stable
+/// between runs rather than depending on directory traversal.
+fn sort_key(item: &DockItem) -> (String, &str) {
+    (item.name.to_lowercase(), item.app_id.as_str())
 }
 
 /// Strip `.desktop` `Exec=` field codes (`%f`, `%U`, ...).

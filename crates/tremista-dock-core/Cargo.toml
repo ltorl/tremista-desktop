@@ -16,6 +16,11 @@ image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
 ] }
 
+# Glyph outlines for Launchpad's app labels. Pure Rust and just a font parser:
+# a real text stack (shaper + font database) would be several times the build
+# for labels that are one short unshaped line each.
+ttf-parser = "0.25.1"
+
 freedesktop-desktop-entry = "0.8.1"
 freedesktop-icons = "0.4.0"
 

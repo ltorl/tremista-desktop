@@ -8,6 +8,7 @@
 
 mod config;
 mod launcher;
+mod launchpad;
 mod toplevels;
 
 use anyhow::{anyhow, Context, Result};
@@ -34,16 +35,17 @@ use std::time::Instant;
 use tiny_skia::Pixmap;
 use tremista_dock_core::{
     bounce_offset, compute_layout, draw, hit_test, matches_app_id, model::resolve_pinned, DockItem,
-    IconCache, Layout, RenderItem, Theme,
+    Font, IconCache, LaunchpadTheme, Layout, RenderItem, Theme,
 };
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
     Connection, QueueHandle,
 };
 use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
 
 use launcher::Launcher;
+use launchpad::Launchpad;
 use toplevels::Toplevel;
 
 pub struct Dock {
@@ -53,9 +55,13 @@ pub struct Dock {
     shm: Shm,
     compositor: CompositorState,
 
+    layer_shell: LayerShell,
     layer: LayerSurface,
     pool: SlotPool,
     pointer: Option<wl_pointer::WlPointer>,
+    /// Bound only so Launchpad can see Escape and the arrow keys; the dock
+    /// itself never takes keyboard focus.
+    keyboard: Option<wl_keyboard::WlKeyboard>,
     /// Needed to `activate` a toplevel: the protocol wants a seat as evidence
     /// the focus change came from user input.
     pub seat: Option<wl_seat::WlSeat>,
@@ -77,6 +83,14 @@ pub struct Dock {
     visible: Vec<DockItem>,
     /// The "All Apps" entry, rebuilt into `visible` on every change.
     launchpad: DockItem,
+    /// The Launchpad grid, present only while it is open.
+    launchpad_view: Option<Launchpad>,
+    launchpad_theme: LaunchpadTheme,
+    /// Every installed app, filled in the first time Launchpad opens.
+    all_apps: Vec<DockItem>,
+    /// For Launchpad's labels. `None` if no usable font was found, in which
+    /// case the grid simply has no captions.
+    font: Option<Font>,
     pub toplevels: Vec<Toplevel>,
 
     cursor_x: Option<f32>,
@@ -114,6 +128,12 @@ fn main() -> Result<()> {
 
     let theme = Theme::default();
     let height = theme.surface_height().ceil() as u32;
+    // Launchpad leaves the dock's strip alone, so the dock stays visible and
+    // clickable underneath the grid, as it does on macOS.
+    let launchpad_theme = LaunchpadTheme {
+        reserved_bottom: theme.background_height() + theme.margin_bottom,
+        ..LaunchpadTheme::default()
+    };
 
     let surface = compositor.create_surface(&qh);
     let layer =
@@ -147,9 +167,11 @@ fn main() -> Result<()> {
         seat_state: SeatState::new(&globals, &qh),
         shm,
         compositor,
+        layer_shell,
         layer,
         pool,
         pointer: None,
+        keyboard: None,
         seat: None,
         _toplevel_manager: None,
         width: 0,
@@ -158,7 +180,11 @@ fn main() -> Result<()> {
         icons: IconCache::new(icon_resolution, None).with_overrides(config::icon_dirs()),
         pinned: pinned.clone(),
         visible: pinned,
-        launchpad: tremista_dock_core::model::launchpad(config::launcher_command()),
+        launchpad: tremista_dock_core::model::launchpad(),
+        launchpad_view: None,
+        launchpad_theme,
+        all_apps: Vec::new(),
+        font: Font::load(),
         toplevels: Vec::new(),
         cursor_x: None,
         pressed: None,
@@ -192,6 +218,7 @@ fn main() -> Result<()> {
     while !dock.exit {
         event_queue.blocking_dispatch(&mut dock)?;
         dock.draw_if_needed(&qh);
+        dock.draw_launchpad_if_needed(&qh);
     }
 
     Ok(())
@@ -333,22 +360,7 @@ impl Dock {
             .create_buffer(width_px, height_px, width_px * 4, format)
             .context("creating an shm buffer")?;
 
-        let pixels = self.scratch.data();
-        match format {
-            // tiny-skia stores premultiplied R,G,B,A bytes, which is exactly
-            // what Abgr8888 means on a little-endian machine.
-            wl_shm::Format::Abgr8888 => canvas.copy_from_slice(pixels),
-            // Argb8888 is a native-endian 0xAARRGGBB word, i.e. B,G,R,A bytes,
-            // so red and blue have to be swapped on the way out.
-            _ => {
-                for (dst, src) in canvas.chunks_exact_mut(4).zip(pixels.chunks_exact(4)) {
-                    dst[0] = src[2];
-                    dst[1] = src[1];
-                    dst[2] = src[0];
-                    dst[3] = src[3];
-                }
-            }
-        }
+        copy_pixels(format, self.scratch.data(), canvas);
 
         if self.input_region_dirty {
             self.apply_input_region()?;
@@ -426,10 +438,17 @@ impl Dock {
         }
     }
 
-    fn on_click(&mut self, index: usize) {
+    fn on_click(&mut self, index: usize, qh: &QueueHandle<Self>) {
         let Some(item) = self.visible.get(index).cloned() else {
             return;
         };
+
+        // Not an app: it opens the dock's own grid rather than starting
+        // anything, so it is handled before the running/exec paths.
+        if item.app_id == tremista_dock_core::model::LAUNCHPAD_APP_ID {
+            self.toggle_launchpad(qh);
+            return;
+        }
 
         if item.running {
             self.activate_or_minimize(&item.app_id);
@@ -446,6 +465,25 @@ impl Dock {
                 self.dirty = true;
             }
             Err(e) => log::error!("{e:#}"),
+        }
+    }
+}
+
+/// Copy a premultiplied RGBA pixmap into a wl_shm buffer.
+fn copy_pixels(format: wl_shm::Format, pixels: &[u8], canvas: &mut [u8]) {
+    match format {
+        // tiny-skia stores premultiplied R,G,B,A bytes, which is exactly what
+        // Abgr8888 means on a little-endian machine.
+        wl_shm::Format::Abgr8888 => canvas.copy_from_slice(pixels),
+        // Argb8888 is a native-endian 0xAARRGGBB word, i.e. B,G,R,A bytes, so
+        // red and blue have to be swapped on the way out.
+        _ => {
+            for (dst, src) in canvas.chunks_exact_mut(4).zip(pixels.chunks_exact(4)) {
+                dst[0] = src[2];
+                dst[1] = src[1];
+                dst[2] = src[0];
+                dst[3] = src[3];
+            }
         }
     }
 }
@@ -481,9 +519,17 @@ impl CompositorHandler for Dock {
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _surface: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
+        // Two surfaces animate independently, so the callback has to say which
+        // one is ready for its next frame.
+        if let Some(view) = self.launchpad_view.as_mut() {
+            if view.owns(surface) {
+                view.frame_done();
+                return;
+            }
+        }
         self.frame_pending = false;
     }
 
@@ -507,7 +553,13 @@ impl CompositorHandler for Dock {
 }
 
 impl LayerShellHandler for Dock {
-    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
+        // The compositor closing the grid is just a dismiss; only the dock's
+        // own surface going away means the dock is done.
+        if self.launchpad_view.as_ref().is_some_and(|v| v.owns(layer.wl_surface())) {
+            self.close_launchpad();
+            return;
+        }
         self.exit = true;
     }
 
@@ -515,11 +567,19 @@ impl LayerShellHandler for Dock {
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _layer: &LayerSurface,
+        layer: &LayerSurface,
         configure: LayerSurfaceConfigure,
         _serial: u32,
     ) {
         let (width, height) = configure.new_size;
+
+        if let Some(view) = self.launchpad_view.as_mut() {
+            if view.owns(layer.wl_surface()) {
+                view.configure(width, height);
+                return;
+            }
+        }
+
         if width != 0 && width != self.width {
             self.width = width;
             self.input_region_dirty = true;
@@ -546,15 +606,25 @@ impl SeatHandler for Dock {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability != Capability::Pointer || self.pointer.is_some() {
-            return;
-        }
-        match self.seat_state.get_pointer(qh, &seat) {
-            Ok(pointer) => {
-                self.pointer = Some(pointer);
-                self.seat = Some(seat);
+        match capability {
+            Capability::Pointer if self.pointer.is_none() => {
+                match self.seat_state.get_pointer(qh, &seat) {
+                    Ok(pointer) => {
+                        self.pointer = Some(pointer);
+                        self.seat = Some(seat);
+                    }
+                    Err(e) => log::error!("acquiring the pointer: {e}"),
+                }
             }
-            Err(e) => log::error!("acquiring the pointer: {e}"),
+            // Bound through the raw protocol rather than sctk's keyboard
+            // helper: that one wants a keymap, and a keymap wants libxkbcommon.
+            // Launchpad only needs Escape and the arrow keys, which are fixed
+            // evdev codes on every layout.
+            Capability::Keyboard if self.keyboard.is_none() => {
+                self.keyboard = Some(seat.get_keyboard(qh, launchpad::KeyboardData));
+                self.seat.get_or_insert(seat);
+            }
+            _ => {}
         }
     }
 
@@ -570,6 +640,11 @@ impl SeatHandler for Dock {
                 pointer.release();
             }
         }
+        if capability == Capability::Keyboard {
+            if let Some(keyboard) = self.keyboard.take() {
+                keyboard.release();
+            }
+        }
     }
 
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
@@ -583,11 +658,19 @@ impl PointerHandler for Dock {
     fn pointer_frame(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _pointer: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
         for event in events {
+            if self
+                .launchpad_view
+                .as_ref()
+                .is_some_and(|v| v.owns(&event.surface))
+            {
+                self.launchpad_pointer(event);
+                continue;
+            }
             if &event.surface != self.layer.wl_surface() {
                 continue;
             }
@@ -612,7 +695,7 @@ impl PointerHandler for Dock {
                     let released = hit_test(&self.layout, x, y);
                     if let (Some(pressed), Some(released)) = (self.pressed.take(), released) {
                         if pressed == released {
-                            self.on_click(released);
+                            self.on_click(released, qh);
                         }
                     }
                 }
