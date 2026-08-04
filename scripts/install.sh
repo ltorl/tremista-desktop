@@ -103,9 +103,9 @@ org.gnome.Settings
 EOF
 fi
 
-if [ ! -e "$config_dir/wallpaper.jpg" ]; then
-    echo "    note: no wallpaper at $config_dir/wallpaper.jpg"
-    echo "          (swaybg will show a black background until you add one)"
+if ! ls "$config_dir"/wallpaper.* >/dev/null 2>&1; then
+    echo "    note: no wallpaper at $config_dir/wallpaper.<ext>"
+    echo "          (the desktop stays plain grey until you add one)"
 fi
 
 case ":$PATH:" in
