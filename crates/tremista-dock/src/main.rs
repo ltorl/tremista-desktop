@@ -9,6 +9,8 @@
 mod config;
 mod launcher;
 mod launchpad;
+mod menu;
+mod settings;
 mod toplevels;
 
 use anyhow::{anyhow, Context, Result};
@@ -19,7 +21,7 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
-        pointer::{PointerEvent, PointerEventKind, PointerHandler, BTN_LEFT},
+        pointer::{PointerEvent, PointerEventKind, PointerHandler, BTN_LEFT, BTN_RIGHT},
         Capability, SeatHandler, SeatState,
     },
     shell::{
@@ -35,7 +37,7 @@ use std::time::Instant;
 use tiny_skia::Pixmap;
 use tremista_dock_core::{
     bounce_offset, compute_layout, draw, hit_test, matches_app_id, model::resolve_pinned, DockItem,
-    Font, IconCache, LaunchpadTheme, Layout, RenderItem, Theme,
+    Font, IconCache, LaunchpadTheme, Layout, MenuTheme, RenderItem, Theme,
 };
 use wayland_client::{
     globals::registry_queue_init,
@@ -46,7 +48,17 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_m
 
 use launcher::Launcher;
 use launchpad::Launchpad;
+use menu::MenuView;
+use settings::Settings;
 use toplevels::Toplevel;
+
+/// Seconds the dock takes to slide out of, or back into, the screen.
+const HIDE_DURATION: f32 = 0.22;
+
+/// Height of the strip left sensitive to the pointer while the dock is hidden.
+/// A couple of pixels is enough to catch a cursor thrown at the bottom edge,
+/// and narrow enough not to steal clicks from whatever is maximised there.
+const REVEAL_STRIP: i32 = 3;
 
 pub struct Dock {
     registry_state: RegistryState,
@@ -86,6 +98,17 @@ pub struct Dock {
     /// The Launchpad grid, present only while it is open.
     launchpad_view: Option<Launchpad>,
     launchpad_theme: LaunchpadTheme,
+    /// The right-click menu, present only while it is open.
+    menu_view: Option<MenuView>,
+    menu_theme: MenuTheme,
+    /// Magnification and auto-hide, as chosen from that menu.
+    settings: Settings,
+    /// How far out the dock is: 1 fully on screen, 0 fully hidden. Animated
+    /// rather than snapped, and only ever away from 1 when hiding is on.
+    reveal: f32,
+    /// When `reveal` was last advanced, so the slide runs on wall-clock time
+    /// instead of on however fast frames happen to arrive.
+    reveal_stepped_at: Instant,
     /// Every installed app, filled in the first time Launchpad opens.
     all_apps: Vec<DockItem>,
     /// For Launchpad's labels. `None` if no usable font was found, in which
@@ -127,6 +150,7 @@ fn main() -> Result<()> {
     )?;
 
     let theme = Theme::default();
+    let settings = Settings::load();
     let height = theme.surface_height().ceil() as u32;
     // Launchpad leaves the dock's strip alone, so the dock stays visible and
     // clickable underneath the grid, as it does on macOS.
@@ -145,9 +169,15 @@ fn main() -> Result<()> {
     layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
     layer.set_size(0, height);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-    // Reserve only the resting plate. Magnified icons deliberately spill into
-    // window territory rather than shoving windows around as the cursor moves.
-    layer.set_exclusive_zone((theme.background_height() + theme.margin_bottom).ceil() as i32);
+    // Reserve only the resting plate, and nothing at all when the dock hides:
+    // the point of hiding is to give the space back. Magnified icons
+    // deliberately spill into window territory rather than shoving windows
+    // around as the cursor moves.
+    layer.set_exclusive_zone(if settings.hiding {
+        0
+    } else {
+        (theme.background_height() + theme.margin_bottom).ceil() as i32
+    });
     layer.commit();
 
     // Room for one 4K-wide frame at scale 2; the pool grows if it has to.
@@ -183,6 +213,13 @@ fn main() -> Result<()> {
         launchpad: tremista_dock_core::model::launchpad(),
         launchpad_view: None,
         launchpad_theme,
+        menu_view: None,
+        menu_theme: MenuTheme::default(),
+        settings,
+        // Start hidden when hiding is on, rather than sliding away on the first
+        // frame the user sees.
+        reveal: if settings.hiding { 0.0 } else { 1.0 },
+        reveal_stepped_at: Instant::now(),
         all_apps: Vec::new(),
         font: Font::load(),
         toplevels: Vec::new(),
@@ -219,6 +256,7 @@ fn main() -> Result<()> {
         event_queue.blocking_dispatch(&mut dock)?;
         dock.draw_if_needed(&qh);
         dock.draw_launchpad_if_needed(&qh);
+        dock.draw_menu_if_needed(&qh);
     }
 
     Ok(())
@@ -272,13 +310,66 @@ impl Dock {
         }
     }
 
+    /// Where the dock wants to be: out when hiding is off, or when the pointer
+    /// is on it, or when its menu is open -- a menu whose dock slid away while
+    /// you were reading it would be absurd.
+    fn reveal_target(&self) -> f32 {
+        if !self.settings.hiding || self.cursor_x.is_some() || self.menu_is_open() {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Advance the hide animation, returning true if anything moved.
+    fn step_reveal(&mut self) -> bool {
+        let elapsed = self.reveal_stepped_at.elapsed().as_secs_f32();
+        self.reveal_stepped_at = Instant::now();
+
+        let target = self.reveal_target();
+        if (self.reveal - target).abs() < f32::EPSILON {
+            return false;
+        }
+        let step = (elapsed / HIDE_DURATION).clamp(0.0, 1.0);
+        let before = self.reveal;
+        self.reveal += (target - self.reveal) * ease(step);
+        // Snap once the remainder is below a pixel's worth, so the animation
+        // ends rather than approaching the target forever.
+        if (self.reveal - target).abs() < 0.005 {
+            self.reveal = target;
+        }
+        // Both the hit-testable plate and the sensitive strip move with it.
+        self.input_region_dirty = true;
+        (self.reveal - before).abs() > f32::EPSILON
+    }
+
+    /// How far down the plate is drawn, in logical pixels.
+    fn hide_offset(&self) -> f32 {
+        (1.0 - self.reveal) * (self.theme.background_height() + self.theme.margin_bottom)
+    }
+
+    /// Called when the hiding setting is toggled: the reserved space has to be
+    /// handed back or taken again, which is a compositor round trip.
+    pub fn apply_hiding(&mut self) {
+        let zone = if self.settings.hiding {
+            0
+        } else {
+            (self.theme.background_height() + self.theme.margin_bottom).ceil() as i32
+        };
+        self.layer.set_exclusive_zone(zone);
+        self.reveal_stepped_at = Instant::now();
+        self.input_region_dirty = true;
+        self.dirty = true;
+    }
+
     fn draw_if_needed(&mut self, qh: &QueueHandle<Self>) {
         if !self.configured || self.frame_pending || self.width == 0 {
             return;
         }
-        // A bounce in flight means the next frame differs from this one even
-        // when nothing else has changed.
-        if !self.dirty && !self.bouncing() {
+        let moved = self.step_reveal();
+        // A bounce in flight, or a slide, means the next frame differs from this
+        // one even when nothing else has changed.
+        if !self.dirty && !moved && !self.bouncing() {
             return;
         }
         if let Err(e) = self.draw(qh) {
@@ -303,12 +394,13 @@ impl Dock {
         let width_px = self.width as i32 * scale;
         let height_px = self.height as i32 * scale;
 
-        self.layout = compute_layout(
-            self.visible.len(),
-            self.width as f32,
-            self.cursor_x,
-            &self.theme,
-        );
+        // Magnification is switched off by simply not telling the layout where
+        // the cursor is -- which is exactly what "no magnification" means. The
+        // alternative, dropping `max_scale` to 1, would change the surface
+        // height the compositor already agreed to and make the dock jump.
+        let cursor_x = self.cursor_x.filter(|_| self.settings.magnification);
+        self.layout = compute_layout(self.visible.len(), self.width as f32, cursor_x, &self.theme);
+        self.layout.offset_y(self.hide_offset());
 
         if self.scratch.width() != width_px as u32 || self.scratch.height() != height_px as u32 {
             self.scratch = Pixmap::new(width_px as u32, height_px as u32)
@@ -389,8 +481,26 @@ impl Dock {
     /// dock at full magnification rather than at rest: a region that shrank as
     /// icons collapsed would pull itself out from under the cursor, and the
     /// dock would flicker between magnified and resting.
+    ///
+    /// While the dock is hidden it shrinks instead to a sliver along the bottom
+    /// edge -- enough to notice a cursor thrown at it, little enough that a
+    /// maximised window keeps the rest.
     fn apply_input_region(&self) -> Result<()> {
         let region = Region::new(&self.compositor).context("creating an input region")?;
+
+        // Any part-way state counts as revealed: shrinking the region mid-slide
+        // would drop the pointer and send the dock straight back down.
+        if self.settings.hiding && self.reveal <= 0.0 {
+            let height = self.height as i32;
+            region.add(
+                0,
+                (height - REVEAL_STRIP).max(0),
+                self.width as i32,
+                REVEAL_STRIP.min(height),
+            );
+            self.layer.set_input_region(Some(region.wl_region()));
+            return Ok(());
+        }
 
         if !self.visible.is_empty() {
             // The row is at its widest with the cursor at the centre, where the
@@ -455,18 +565,30 @@ impl Dock {
             return;
         }
 
+        self.launch(&item);
+    }
+
+    /// Start `item`, bouncing its icon while it comes up. Unconditional: "New
+    /// Window" uses this on an app that is already running, which is the point.
+    pub fn launch(&mut self, item: &DockItem) {
         if item.exec.is_empty() {
             return;
         }
         match self.launcher.spawn(&item.exec) {
             Ok(()) => {
                 self.bounces.retain(|(id, _)| *id != item.app_id);
-                self.bounces.push((item.app_id, Instant::now()));
+                self.bounces.push((item.app_id.clone(), Instant::now()));
                 self.dirty = true;
             }
             Err(e) => log::error!("{e:#}"),
         }
     }
+}
+
+/// Smoothstep, so the dock eases out of the screen instead of jerking.
+fn ease(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Copy a premultiplied RGBA pixmap into a wl_shm buffer.
@@ -522,9 +644,15 @@ impl CompositorHandler for Dock {
         surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
-        // Two surfaces animate independently, so the callback has to say which
-        // one is ready for its next frame.
+        // Several surfaces animate independently, so the callback has to say
+        // which one is ready for its next frame.
         if let Some(view) = self.launchpad_view.as_mut() {
+            if view.owns(surface) {
+                view.frame_done();
+                return;
+            }
+        }
+        if let Some(view) = self.menu_view.as_mut() {
             if view.owns(surface) {
                 view.frame_done();
                 return;
@@ -554,9 +682,21 @@ impl CompositorHandler for Dock {
 
 impl LayerShellHandler for Dock {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
-        // The compositor closing the grid is just a dismiss; only the dock's
-        // own surface going away means the dock is done.
-        if self.launchpad_view.as_ref().is_some_and(|v| v.owns(layer.wl_surface())) {
+        // The compositor closing a transient overlay is just a dismiss; only the
+        // dock's own surface going away means the dock is done.
+        if self
+            .menu_view
+            .as_ref()
+            .is_some_and(|v| v.owns(layer.wl_surface()))
+        {
+            self.close_menu();
+            return;
+        }
+        if self
+            .launchpad_view
+            .as_ref()
+            .is_some_and(|v| v.owns(layer.wl_surface()))
+        {
             self.close_launchpad();
             return;
         }
@@ -574,6 +714,12 @@ impl LayerShellHandler for Dock {
         let (width, height) = configure.new_size;
 
         if let Some(view) = self.launchpad_view.as_mut() {
+            if view.owns(layer.wl_surface()) {
+                view.configure(width, height);
+                return;
+            }
+        }
+        if let Some(view) = self.menu_view.as_mut() {
             if view.owns(layer.wl_surface()) {
                 view.configure(width, height);
                 return;
@@ -663,12 +809,22 @@ impl PointerHandler for Dock {
         events: &[PointerEvent],
     ) {
         for event in events {
+            // The menu is checked first: while it is up it is the topmost
+            // surface and owns every click, including the one that dismisses it.
+            if self
+                .menu_view
+                .as_ref()
+                .is_some_and(|v| v.owns(&event.surface))
+            {
+                self.menu_pointer(event);
+                continue;
+            }
             if self
                 .launchpad_view
                 .as_ref()
                 .is_some_and(|v| v.owns(&event.surface))
             {
-                self.launchpad_pointer(event);
+                self.launchpad_pointer(event, qh);
                 continue;
             }
             if &event.surface != self.layer.wl_surface() {
@@ -688,6 +844,12 @@ impl PointerHandler for Dock {
                 }
                 PointerEventKind::Press { button, .. } if button == BTN_LEFT => {
                     self.pressed = hit_test(&self.layout, x, y);
+                }
+                PointerEventKind::Press { button, .. } if button == BTN_RIGHT => {
+                    // On press, not release: that is when menus appear on macOS,
+                    // and it means the button can be held and released over the
+                    // item the user wants.
+                    self.open_dock_menu(x, y, qh);
                 }
                 PointerEventKind::Release { button, .. } if button == BTN_LEFT => {
                     // Act only if press and release landed on the same icon, so

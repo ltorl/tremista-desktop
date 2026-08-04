@@ -32,6 +32,23 @@ pub struct Layout {
     pub background: (f32, f32, f32, f32),
 }
 
+impl Layout {
+    /// Slide the whole dock by `dy` logical pixels.
+    ///
+    /// Auto-hide is drawn rather than moved: the surface stays where it is and
+    /// the plate slides out of the bottom of it, so hiding costs no round trip
+    /// to the compositor and cannot fight with the layer surface's anchoring.
+    pub fn offset_y(&mut self, dy: f32) {
+        if dy == 0.0 {
+            return;
+        }
+        for item in &mut self.items {
+            item.y += dy;
+        }
+        self.background.1 += dy;
+    }
+}
+
 /// Magnification factor for an icon whose resting centre sits `distance`
 /// logical pixels from the cursor.
 ///
@@ -228,6 +245,20 @@ mod tests {
         // Peaks upward (negative y) somewhere in the first half.
         let mid = bounce_offset(t.bounce_duration * 0.25, &t);
         assert!(mid < -1.0, "expected an upward hop, got {mid}");
+    }
+
+    #[test]
+    fn offsetting_moves_icons_and_plate_together() {
+        let t = theme();
+        let mut l = compute(4, 1000.0, None, &t);
+        let before = l.clone();
+        l.offset_y(40.0);
+        for (a, b) in l.items.iter().zip(&before.items) {
+            assert_eq!(a.y - b.y, 40.0);
+            assert_eq!(a.x, b.x);
+        }
+        assert_eq!(l.background.1 - before.background.1, 40.0);
+        assert_eq!(l.background.3, before.background.3);
     }
 
     #[test]

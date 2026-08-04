@@ -11,9 +11,10 @@ not provide is a separate layer-shell client, starting with the dock.
 ## What v1 does
 
 **Dock.** A `wlr-layer-shell` panel across the bottom of the screen: squircle
-plate, cursor-following magnification with a raised-cosine falloff, running
-indicators, launch bounce, and click-to-focus/minimise through
-`wlr-foreign-toplevel-management`. Minimising animates into the app's own icon.
+plate over blurred wallpaper, cursor-following magnification with a
+raised-cosine falloff, running indicators, launch bounce, optional auto-hide,
+and click-to-focus/minimise through `wlr-foreign-toplevel-management`.
+Minimising animates into the app's own icon.
 
 **Mission Control.** Wayfire's `scale` plugin, triggered by **moving the mouse
 into the top-right corner** — a 12×12 px hotspot with a 180 ms dwell, so
@@ -58,6 +59,25 @@ out and pick **Tremista**, or try it from a running session with:
 left to right. Ids that are not installed are skipped, and a line may list
 alternatives as `a|b|c` — the first installed one is pinned, which is how the
 default list pins whichever GNOME terminal your release ships.
+
+### Context menus
+
+Right-clicking the dock's **background** — the plate, not an icon — offers
+**Turn Magnification Off** and **Turn Hiding On** (or the reverse, depending on
+where they currently stand). Both take effect immediately and are written to
+`~/.config/tremista/settings.conf`, which is two `key = on` lines and can be
+edited by hand instead. With hiding on the dock slides out of the bottom of the
+screen, gives its screen space back to windows, and comes back when the pointer
+touches the bottom edge.
+
+Right-clicking an **app** offers **New Window**, **Pin to Dock** or **Unpin**,
+and — for something that is running — **Quit**. The same menu appears on a
+right-click in Launchpad, minus Quit: the grid is for starting things. Pinning
+and unpinning rewrite `dock.conf`, which means the comments and `a|b|c`
+alternatives in a hand-edited file are replaced by the ids actually in the dock.
+`Escape` or a click elsewhere dismisses any of these menus.
+
+### Launchpad
 
 **All Apps** is always the rightmost icon and is not configurable away. Clicking
 it opens **Launchpad**: a full-screen, paged grid of every installed app, drawn

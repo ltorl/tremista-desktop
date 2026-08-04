@@ -9,6 +9,7 @@
 pub mod icons;
 pub mod launchpad;
 pub mod layout;
+pub mod menu;
 pub mod model;
 pub mod render;
 pub mod text;
@@ -17,6 +18,7 @@ pub mod theme;
 pub use icons::IconCache;
 pub use launchpad::{GridItem, LaunchpadTheme};
 pub use layout::{bounce_offset, compute as compute_layout, hit_test, ItemGeometry, Layout};
+pub use menu::{Menu, MenuTheme};
 pub use model::{matches_app_id, DockItem};
 pub use render::{draw, RenderItem};
 pub use text::Font;

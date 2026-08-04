@@ -68,6 +68,30 @@ pub fn pinned() -> Vec<String> {
     }
 }
 
+/// Rewrite the pinned list, which is what the context menu's Pin and Unpin do.
+///
+/// The ids written are the ones actually in the dock, so a line of `a|b|c`
+/// alternatives collapses to whichever one this machine has installed. That is
+/// a real edit to a hand-written file, but it is also the only honest answer:
+/// after a pin or an unpin the file has to describe the dock as it now is.
+pub fn write_pinned(ids: &[String]) -> std::io::Result<()> {
+    let Some(path) = pinned_path() else {
+        return Err(std::io::Error::other(
+            "no HOME or XDG_CONFIG_HOME to save the dock to",
+        ));
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut text =
+        String::from("# One .desktop id per line, top to bottom = left to right.\n");
+    for id in ids {
+        text.push_str(id);
+        text.push('\n');
+    }
+    std::fs::write(&path, text)
+}
+
 fn parse(text: &str) -> Vec<String> {
     text.lines()
         .map(|line| line.split('#').next().unwrap_or("").trim())

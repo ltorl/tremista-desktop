@@ -77,9 +77,12 @@ impl Default for LaunchpadTheme {
             margin_bottom: 46.0,
             reserved_bottom: 0.0,
             fade: 56.0,
-            // Dark enough to push the desktop back, light enough that the
-            // compositor's blur behind the surface still shows through.
-            backdrop: Color::from_rgba8(18, 18, 22, 190),
+            // Blur is the compositor's job, so the only way to show *more* of it
+            // is to put less paint in front of it. This is a thin tint that
+            // darkens and cools whatever Wayfire has already blurred, rather
+            // than a scrim that hides it -- see `[blur]` in wayfire.ini, which
+            // is what actually does the work.
+            backdrop: Color::from_rgba8(12, 12, 16, 150),
             label: Color::from_rgba8(255, 255, 255, 240),
             label_shadow: Color::from_rgba8(0, 0, 0, 130),
             hover: Color::from_rgba8(255, 255, 255, 28),
@@ -113,6 +116,25 @@ pub struct Cell {
 impl Cell {
     pub fn center_x(&self) -> f32 {
         self.x + self.width / 2.0
+    }
+
+    /// The hover highlight, as `(x, y, width, height)`.
+    ///
+    /// Sized from the icon and the label under it, then clamped inside the cell
+    /// with a gutter to spare: at the base cell size the natural plate is taller
+    /// than the row, so without the clamp the highlights of vertically adjacent
+    /// apps overlap and the grid reads as one continuous smear.
+    pub fn hover_plate(&self, theme: &LaunchpadTheme) -> (f32, f32, f32, f32) {
+        const GUTTER: f32 = 7.0;
+
+        let width = (self.icon_size + 44.0).min((self.width - GUTTER * 2.0).max(0.0));
+        let height = (self.icon_size + theme.label_gap + theme.label_size + 26.0)
+            .min((self.height - GUTTER * 2.0).max(0.0));
+        let x = self.center_x() - width / 2.0;
+        let y = (self.icon_y - 14.0)
+            .max(self.y + GUTTER)
+            .min(self.y + self.height - GUTTER - height);
+        (x, y, width, height)
     }
 
     fn contains(&self, x: f32, y: f32) -> bool {
@@ -271,11 +293,10 @@ pub fn draw(
             // Sized from the icon rather than the cell: cells stretch to fill
             // the screen, and a highlight that stretched with them would be a
             // wide slab around a small icon.
-            let plate_width = cell.icon_size + 44.0;
-            let plate_height = cell.icon_size + theme.label_gap + theme.label_size + 26.0;
+            let (plate_x, plate_y, plate_width, plate_height) = cell.hover_plate(theme);
             if let Some(path) = squircle(
-                cell.center_x() - plate_width / 2.0,
-                cell.icon_y - 14.0,
+                plate_x,
+                plate_y,
                 plate_width,
                 plate_height,
                 theme.hover_radius,
@@ -514,6 +535,39 @@ mod tests {
                 cell.y + cell.height <= HEIGHT - theme.reserved_bottom,
                 "cell overlaps the dock: {cell:?}"
             );
+        }
+    }
+
+    #[test]
+    fn hover_plates_stay_inside_their_cells_and_never_overlap() {
+        // Small screens squeeze the cells hardest, so check a range of them.
+        for (width, height) in [(WIDTH, HEIGHT), (1280.0, 720.0), (800.0, 600.0)] {
+            let theme = theme();
+            let grid = compute(35, 0, width, height, &theme);
+            let plates: Vec<_> = grid
+                .cells
+                .iter()
+                .map(|cell| (cell.hover_plate(&theme), *cell))
+                .collect();
+
+            for ((x, y, w, h), cell) in &plates {
+                assert!(
+                    *x >= cell.x - 0.01
+                        && *y >= cell.y - 0.01
+                        && x + w <= cell.x + cell.width + 0.01
+                        && y + h <= cell.y + cell.height + 0.01,
+                    "plate escapes its cell at {width}x{height}: {:?} in {cell:?}",
+                    (x, y, w, h)
+                );
+            }
+
+            for (i, ((ax, ay, aw, ah), _)) in plates.iter().enumerate() {
+                for ((bx, by, bw, bh), _) in &plates[i + 1..] {
+                    let overlaps =
+                        ax < &(bx + bw) && bx < &(ax + aw) && ay < &(by + bh) && by < &(ay + ah);
+                    assert!(!overlaps, "plates overlap at {width}x{height}");
+                }
+            }
         }
     }
 

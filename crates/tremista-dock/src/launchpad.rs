@@ -13,7 +13,7 @@ use crate::{copy_pixels, Dock};
 use anyhow::{anyhow, Context, Result};
 use smithay_client_toolkit::{
     compositor::{FrameCallbackData, Region},
-    seat::pointer::{PointerEvent, PointerEventKind, BTN_LEFT},
+    seat::pointer::{PointerEvent, PointerEventKind, BTN_LEFT, BTN_RIGHT},
     shell::{
         wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerSurface},
         WaylandSurface,
@@ -134,6 +134,27 @@ impl Launchpad {
     pub fn frame_done(&mut self) {
         self.frame_pending = false;
     }
+
+    /// The grid's height in surface-local pixels, which is what a context menu
+    /// opened over it needs in order to anchor itself above the click.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Take or give back the keyboard.
+    ///
+    /// Two surfaces cannot both hold it exclusively, so a menu opened over the
+    /// grid borrows it and hands it back on close. The grid stays on screen
+    /// throughout: "Pin to Dock" would be a strange thing to do to an app whose
+    /// icon vanished as the menu appeared.
+    pub fn set_keyboard_focus(&mut self, focused: bool) {
+        self.layer.set_keyboard_interactivity(if focused {
+            KeyboardInteractivity::Exclusive
+        } else {
+            KeyboardInteractivity::None
+        });
+        self.layer.commit();
+    }
 }
 
 impl Dock {
@@ -183,7 +204,7 @@ impl Dock {
     }
 
     /// A pointer event that landed on the Launchpad surface.
-    pub fn launchpad_pointer(&mut self, event: &PointerEvent) {
+    pub fn launchpad_pointer(&mut self, event: &PointerEvent, qh: &QueueHandle<Self>) {
         let Some(view) = self.launchpad_view.as_mut() else {
             return;
         };
@@ -204,6 +225,14 @@ impl Dock {
             }
             PointerEventKind::Press { button, .. } if button == BTN_LEFT => {
                 view.press = Some(grid::hit_test(&view.grid, x, y));
+            }
+            PointerEventKind::Press { button, .. } if button == BTN_RIGHT => {
+                // Only over an app: right-clicking the empty grid has nothing
+                // to offer, and the dock's own settings menu is a right-click
+                // on the dock away.
+                if let Some(index) = grid::hit_test(&view.grid, x, y) {
+                    self.open_launchpad_menu(index, x, y, qh);
+                }
             }
             PointerEventKind::Release { button, .. } if button == BTN_LEFT => {
                 let released = grid::hit_test(&view.grid, x, y);
@@ -419,7 +448,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for Dock {
         _qh: &QueueHandle<Self>,
     ) {
         // The dock takes no keyboard focus of its own; every key we see here
-        // arrived because Launchpad is open and asked for it.
+        // arrived because Launchpad or a context menu is open and asked for it.
         let wl_keyboard::Event::Key {
             key, state: pressed, ..
         } = event
@@ -427,6 +456,15 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for Dock {
             return;
         };
         if !matches!(pressed.into_result(), Ok(wl_keyboard::KeyState::Pressed)) {
+            return;
+        }
+
+        // A menu opened over the grid is the innermost thing on screen, so
+        // Escape dismisses it first and leaves the grid where it was.
+        if state.menu_is_open() {
+            if key == KEY_ESC {
+                state.close_menu();
+            }
             return;
         }
 
