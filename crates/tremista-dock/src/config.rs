@@ -11,7 +11,9 @@ use std::path::PathBuf;
 const DEFAULTS: &[&str] = &[
     "firefox",
     "org.gnome.Nautilus",
-    "foot",
+    // GNOME's terminal has been three different apps across releases; `|` picks
+    // whichever one this machine actually has.
+    "org.gnome.Terminal|org.gnome.Ptyxis|org.gnome.Console",
     "code",
     "org.gnome.TextEditor",
     "org.gnome.Settings",
@@ -69,8 +71,17 @@ fn parse(text: &str) -> Vec<String> {
     text.lines()
         .map(|line| line.split('#').next().unwrap_or("").trim())
         .filter(|line| !line.is_empty())
-        // `.desktop` is optional in the file; the resolver wants it off.
-        .map(|line| line.trim_end_matches(".desktop").to_owned())
+        // `.desktop` is optional in the file; the resolver wants it off. A line
+        // may hold `a|b` alternatives, so strip it from each one rather than
+        // only from the end of the line.
+        .map(|line| {
+            line.split('|')
+                .map(|id| id.trim().trim_end_matches(".desktop"))
+                .filter(|id| !id.is_empty())
+                .collect::<Vec<_>>()
+                .join("|")
+        })
+        .filter(|line| !line.is_empty())
         .collect()
 }
 
@@ -80,13 +91,23 @@ mod tests {
 
     #[test]
     fn comments_and_blank_lines_are_ignored() {
-        let text = "\n# a comment\nfirefox\n\n  foot  # trailing comment\n";
-        assert_eq!(parse(text), vec!["firefox", "foot"]);
+        let text = "\n# a comment\nfirefox\n\n  code  # trailing comment\n";
+        assert_eq!(parse(text), vec!["firefox", "code"]);
     }
 
     #[test]
     fn desktop_suffix_is_optional() {
         assert_eq!(parse("code.desktop\ncode\n"), vec!["code", "code"]);
+    }
+
+    #[test]
+    fn alternatives_are_normalised_individually() {
+        assert_eq!(
+            parse("org.gnome.Terminal.desktop | org.gnome.Console\n"),
+            vec!["org.gnome.Terminal|org.gnome.Console"]
+        );
+        // A line of nothing but separators is not an app.
+        assert!(parse("|  |\n").is_empty());
     }
 
     #[test]

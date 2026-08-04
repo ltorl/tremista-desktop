@@ -35,22 +35,22 @@ done
 # EndeavourOS, Nobara) then work without being listed.
 if command -v pacman >/dev/null 2>&1; then
     pm="pacman"
-    deps="wayfire wf-config swaybg foot wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr ttf-inter papirus-icon-theme"
+    deps="wayfire wf-config swaybg gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr ttf-inter papirus-icon-theme"
     install_cmd="sudo pacman -S --needed $deps"
 elif command -v apt-get >/dev/null 2>&1; then
     pm="apt"
-    deps="wayfire swaybg foot wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr fonts-inter papirus-icon-theme"
+    deps="wayfire swaybg gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr fonts-inter papirus-icon-theme"
     install_cmd="sudo apt-get install -y $deps"
 elif command -v dnf >/dev/null 2>&1; then
     pm="dnf"
-    deps="wayfire swaybg foot wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr rsms-inter-fonts papirus-icon-theme"
+    deps="wayfire swaybg gnome-terminal wofi grim slurp wl-clipboard wireplumber xdg-desktop-portal-wlr rsms-inter-fonts papirus-icon-theme"
     install_cmd="sudo dnf install -y $deps"
 else
     pm=""
 fi
 
 if [ -z "$pm" ]; then
-    echo "note: unrecognised package manager; install wayfire, swaybg, foot," >&2
+    echo "note: unrecognised package manager; install wayfire, swaybg, a terminal," >&2
     echo "      wofi, grim, slurp, wireplumber and an icon theme yourself." >&2
 elif [ "$install_deps" -eq 1 ]; then
     echo "==> installing packages with $pm"
@@ -94,10 +94,12 @@ install -Dm644 "$repo/config/wayfire.ini" "$config_dir/wayfire.ini"
 if [ ! -f "$config_dir/dock.conf" ]; then
     cat > "$config_dir/dock.conf" <<'EOF'
 # One .desktop id per line, top to bottom = left to right in the dock.
-# Ids that are not installed are skipped silently.
+# Ids that are not installed are skipped silently. "a|b" pins the first of
+# a and b that is installed.
 firefox
 org.gnome.Nautilus
-foot
+# The GNOME terminal has been renamed twice; the first id installed wins.
+org.gnome.Terminal|org.gnome.Ptyxis|org.gnome.Console
 org.gnome.TextEditor
 org.gnome.Settings
 EOF
@@ -115,7 +117,11 @@ fi
 # directory is ours, and a user who wants a different icon adds their own file
 # under a different name rather than editing one of these.
 for icon in "$repo"/assets/icons/*; do
-    [ -f "$icon" ] && install -Dm644 "$icon" "$config_dir/icons/$(basename "$icon")"
+    # `if` rather than `[ -f ] &&`: under set -e a false test on the last
+    # iteration would abort the script, which an unmatched glob would cause.
+    if [ -f "$icon" ]; then
+        install -Dm644 "$icon" "$config_dir/icons/$(basename "$icon")"
+    fi
 done
 
 case ":$PATH:" in

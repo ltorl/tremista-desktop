@@ -40,18 +40,27 @@ pub fn strip_field_codes(exec: &str) -> String {
 
 /// Build dock items for a list of pinned app IDs, resolving each against the
 /// installed `.desktop` entries. IDs that resolve to nothing are dropped.
+///
+/// An entry may list alternatives separated by `|`, and the first one installed
+/// wins. That is how a default dock can pin "the GNOME terminal" without
+/// knowing whether this release ships Terminal, Console or Ptyxis.
 pub fn resolve_pinned(app_ids: &[String]) -> Vec<DockItem> {
     let locales = get_languages_from_env();
     let entries = freedesktop_desktop_entry::desktop_entries(&locales);
 
     app_ids
         .iter()
-        .filter_map(|id| {
-            let entry = freedesktop_desktop_entry::find_app_by_id(
-                &entries,
-                freedesktop_desktop_entry::unicase::Ascii::new(id.as_str()),
-            )?;
-            from_entry(entry, &locales, true)
+        .filter_map(|spec| {
+            spec.split('|')
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .find_map(|id| {
+                    let entry = freedesktop_desktop_entry::find_app_by_id(
+                        &entries,
+                        freedesktop_desktop_entry::unicase::Ascii::new(id),
+                    )?;
+                    from_entry(entry, &locales, true)
+                })
         })
         .collect()
 }

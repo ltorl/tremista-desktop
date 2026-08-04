@@ -58,7 +58,7 @@ out and pick **Tremista**, or try it from a running session with:
 left to right. Ids that are not installed are skipped.
 
 Icons come from the system icon theme, but `~/.config/tremista/icons` is
-searched first: a file named after the app's `Icon=` name — `foot.svg`,
+searched first: a file named after the app's `Icon=` name — `firefox.svg`,
 `org.gnome.Nautilus.png` — replaces the theme's version of that icon. SVG wins
 over a bitmap of the same name. `assets/icons/` is installed there.
 
