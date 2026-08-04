@@ -55,5 +55,8 @@ out and pick **Tremista**, or try it from a running session with:
 ## Configuring the dock
 
 `~/.config/tremista/dock.conf` is one `.desktop` id per line, top to bottom =
-left to right. Ids that are not installed are skipped. Drop a wallpaper at
-`~/.config/tremista/wallpaper.jpg`.
+left to right. Ids that are not installed are skipped.
+
+The wallpaper is `~/.config/tremista/wallpaper.<ext>` — any format swaybg can
+read. `assets/wallpaper.png` is installed there the first time, and never
+overwritten afterwards.

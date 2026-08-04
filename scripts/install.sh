@@ -103,9 +103,12 @@ org.gnome.Settings
 EOF
 fi
 
+# Seed the default wallpaper, but only when the user has none -- replacing one
+# they chose themselves would be the same mistake as clobbering their config.
 if ! ls "$config_dir"/wallpaper.* >/dev/null 2>&1; then
-    echo "    note: no wallpaper at $config_dir/wallpaper.<ext>"
-    echo "          (the desktop stays plain grey until you add one)"
+    install -Dm644 "$repo/assets/wallpaper.png" "$config_dir/wallpaper.png"
+    echo "    installed the default wallpaper (replace $config_dir/wallpaper.*"
+    echo "    with any image to change it)"
 fi
 
 case ":$PATH:" in

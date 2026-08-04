@@ -52,5 +52,9 @@ export XDG_CURRENT_DESKTOP=Tremista:wlroots
 # find, which is what you want the first time.
 export RUST_LOG="${RUST_LOG:-tremista_dock=debug,info}"
 
+# Show the repo's wallpaper without installing anything, so a --repo run looks
+# like the real thing. An installed wallpaper still wins if you set this empty.
+export TREMISTA_WALLPAPER="${TREMISTA_WALLPAPER:-$repo/assets/wallpaper.png}"
+
 echo "==> starting nested Wayfire (close the window to stop)"
 exec wayfire
